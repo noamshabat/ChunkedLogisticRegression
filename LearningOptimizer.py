@@ -45,7 +45,7 @@ def test_all(data_folder, config_in, out_file_name):
         results_array = []
         for perm in permutations:
             log('running with args' + str(perm))
-            result = run_learner(learner_config["learner"], 10, data_folder, perm)
+            result = run_learner(learner_config["learner"], 30, data_folder, perm)
             log('results: ' + str(result))
             perm.update(result)
             results_array.append(perm)

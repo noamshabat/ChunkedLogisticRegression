@@ -131,12 +131,42 @@ def create_shuffle_metadata(configuration):
 
 
 # TODO: make this function pure. don't change the input.
-def extract_train_data(configuration, chunk, size, train_file):
-    for i in range(size):
+def extract_train_data(configuration, chunk, percent_train, train_file):
+    # first we need to make sure that we get some true labels in the train data.
+    # let's mark all the labels in the chunk
+    def get_label_indexes():
+        label_indexes_in = []
+        for ix, rec in enumerate(chunk):
+            label = rec.endswith('1\n')
+            if label:
+                label_indexes_in.append(ix)
+        return label_indexes_in
+
+    # now get some training labels.
+    label_indexes = get_label_indexes()
+    labels_train_count = int(len(label_indexes)*percent_train)
+    for i in range(labels_train_count):
+        index = random.randint(0, len(label_indexes)-1)
+        train_file.write(chunk[label_indexes[index]])
+        chunk.pop(label_indexes[index])
+        label_indexes.pop(index)
+        configuration['test_lines'] += 1
+        label_indexes = get_label_indexes()
+
+    # remove the rest of the training labels from the input
+    non_train = []
+    for i in reversed(label_indexes):
+        non_train.append(chunk.pop(i))
+
+    # get non-label training data
+    rest_size = int(len(chunk)*percent_train)
+    for i in range(rest_size):
         index = random.randint(0, len(chunk)-1)
         train_file.write(chunk[index])
         chunk.pop(index)
         configuration['test_lines'] += 1
+
+    chunk = chunk + non_train
     return chunk
 
 
@@ -160,7 +190,7 @@ def create_chunks(input_file, separator, max_chunk_size_bytes, num_shuffles, tar
                 chunk = [next(fd) for x in range(lines_to_get)]
                 remaining_lines -= lines_to_get
 
-                post_train = extract_train_data(configuration, chunk, int(lines_to_get*0.25), tf)
+                post_train = extract_train_data(configuration, chunk, 0.25, tf)
                 # write lines on all shuffles
                 for shuffle_index in range(configuration["shuffles"]):
                     shuffle_chunk(configuration, post_train, shuffle_index, shuffle_metadata)
@@ -187,7 +217,7 @@ def get_shuffle_chunks(configuration, shuffle_index):
         while curr_chunk_index < configuration["num_chunks"]:
             curr_chunk_index += 1
             yield pd.read_csv(f"{configuration['target_dir']}/shuffle{shuffle_index}/chunk{curr_chunk_index-1}",
-                              header=None, names=configuration['titles'])
+                              header=None, names=configuration['titles'], sep=configuration['separator'])
 
     return get_chunks
 
@@ -215,7 +245,8 @@ def get_test_data(target_dir):
     with open(f"{target_dir}/configuration.json") as json_file:
         configuration = json.load(json_file)
 
-    return pd.read_csv(f"{target_dir}/test.csv", header=None, names=configuration['titles'])
+    return pd.read_csv(f"{target_dir}/test.csv", header=None, names=configuration['titles'],
+                       sep=configuration['separator'])
 
 
 # create_chunks('./diabetes.csv', ',', 5000, 3, './tmp', 0.25)
